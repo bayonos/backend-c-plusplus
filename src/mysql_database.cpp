@@ -1,14 +1,22 @@
 #include "mysql_database.hpp"
 
+#if __has_include(<mysqld_error.h>)
 #include <mysqld_error.h>
+#endif
+#ifndef ER_DUP_ENTRY
+#define ER_DUP_ENTRY 1062
+#endif
 
 #include <array>
 #include <cstring>
 #include <stdexcept>
+#include <type_traits>
 
 namespace auth {
 
 namespace {
+
+using MysqlBool = std::remove_pointer_t<decltype(MYSQL_BIND{}.is_null)>;
 
 class MysqlStmtGuard {
 public:
@@ -38,24 +46,24 @@ private:
     MYSQL_STMT* stmt_ = nullptr;
 };
 
-void bindStringParam(MYSQL_BIND& b, const std::string& val, unsigned long& len, bool& is_null) {
+void bindStringParam(MYSQL_BIND& b, const std::string& val, unsigned long& len, MysqlBool& is_null) {
     std::memset(&b, 0, sizeof(b));
     b.buffer_type = MYSQL_TYPE_STRING;
     b.buffer = const_cast<char*>(val.data());
     b.buffer_length = static_cast<unsigned long>(val.size());
     len = static_cast<unsigned long>(val.size());
-    is_null = false;
+    is_null = 0;
     b.length = &len;
     b.is_null = &is_null;
 }
 
-void bindNullableStringParam(MYSQL_BIND& b, const std::string& val, unsigned long& len, bool& is_null) {
+void bindNullableStringParam(MYSQL_BIND& b, const std::string& val, unsigned long& len, MysqlBool& is_null) {
     std::memset(&b, 0, sizeof(b));
     b.buffer_type = MYSQL_TYPE_STRING;
     b.buffer = const_cast<char*>(val.data());
     b.buffer_length = static_cast<unsigned long>(val.size());
     len = static_cast<unsigned long>(val.size());
-    is_null = val.empty();
+    is_null = val.empty() ? 1 : 0;
     b.length = &len;
     b.is_null = &is_null;
 }
@@ -64,10 +72,10 @@ void bindInt64Param(MYSQL_BIND& b, int64_t& val) {
     std::memset(&b, 0, sizeof(b));
     b.buffer_type = MYSQL_TYPE_LONGLONG;
     b.buffer = &val;
-    b.is_unsigned = false;
+    b.is_unsigned = 0;
 }
 
-void bindOutString(MYSQL_BIND& b, char* buf, unsigned long cap, unsigned long& len, bool& is_null) {
+void bindOutString(MYSQL_BIND& b, char* buf, unsigned long cap, unsigned long& len, MysqlBool& is_null) {
     std::memset(&b, 0, sizeof(b));
     b.buffer_type = MYSQL_TYPE_STRING;
     b.buffer = buf;
@@ -76,7 +84,7 @@ void bindOutString(MYSQL_BIND& b, char* buf, unsigned long cap, unsigned long& l
     b.is_null = &is_null;
 }
 
-std::string extractString(const char* buf, unsigned long len, bool is_null, unsigned long cap) {
+std::string extractString(const char* buf, unsigned long len, MysqlBool is_null, unsigned long cap) {
     if (is_null) {
         return "";
     }
@@ -204,7 +212,7 @@ std::optional<UserRecord> MysqlDatabase::fetchSingleUserStmt(MYSQL_STMT* stmt) {
     char created_at[64]{};
 
     std::array<unsigned long, 9> lengths{};
-    std::array<bool, 9> is_nulls{};
+    std::array<MysqlBool, 9> is_nulls{};
     std::array<MYSQL_BIND, 9> out{};
 
     std::memset(&out[0], 0, sizeof(out[0]));
@@ -264,7 +272,7 @@ std::optional<UserRecord> MysqlDatabase::createUser(const std::string& username,
     MysqlStmtGuard stmt(conn_, sql);
     std::array<MYSQL_BIND, 6> params{};
     std::array<unsigned long, 6> lens{};
-    std::array<bool, 6> nulls{};
+    std::array<MysqlBool, 6> nulls{};
 
     bindStringParam(params[0], username, lens[0], nulls[0]);
     bindStringParam(params[1], password_hash, lens[1], nulls[1]);
@@ -310,7 +318,7 @@ std::optional<UserRecord> MysqlDatabase::findUserSingleStringLocked(const char* 
     MysqlStmtGuard stmt(conn_, sql);
     MYSQL_BIND param{};
     unsigned long len = 0;
-    bool is_null = false;
+    MysqlBool is_null = 0;
     bindStringParam(param, value, len, is_null);
     if (mysql_stmt_bind_param(stmt.get(), &param) != 0) {
         throw std::runtime_error(std::string("MySQL bind_param failed: ") + mysql_stmt_error(stmt.get()));
@@ -360,7 +368,7 @@ bool MysqlDatabase::updatePassword(int64_t user_id, const std::string& new_passw
     MysqlStmtGuard stmt(conn_, sql);
     std::array<MYSQL_BIND, 2> params{};
     unsigned long len0 = 0;
-    bool null0 = false;
+    MysqlBool null0 = 0;
     int64_t uid = user_id;
     bindStringParam(params[0], new_password_hash, len0, null0);
     bindInt64Param(params[1], uid);
@@ -390,7 +398,7 @@ bool MysqlDatabase::storeRefreshToken(int64_t user_id,
     int64_t exp = expires_at;
     int64_t now = now_epoch_sec;
     unsigned long len = 0;
-    bool is_null = false;
+    MysqlBool is_null = 0;
 
     bindInt64Param(params[0], uid);
     bindStringParam(params[1], token_hash, len, is_null);
@@ -414,7 +422,7 @@ std::optional<RefreshTokenRecord> MysqlDatabase::findRefreshToken(const std::str
     MysqlStmtGuard stmt(conn_, sql);
     MYSQL_BIND param{};
     unsigned long len = 0;
-    bool is_null = false;
+    MysqlBool is_null = 0;
     bindStringParam(param, token_hash, len, is_null);
     if (mysql_stmt_bind_param(stmt.get(), &param) != 0) {
         throw std::runtime_error(std::string("MySQL bind_param failed: ") + mysql_stmt_error(stmt.get()));
@@ -434,7 +442,7 @@ std::optional<RefreshTokenRecord> MysqlDatabase::findRefreshToken(const std::str
     int64_t created_at = 0;
 
     std::array<unsigned long, 6> lengths{};
-    std::array<bool, 6> is_nulls{};
+    std::array<MysqlBool, 6> is_nulls{};
     std::array<MYSQL_BIND, 6> out{};
 
     std::memset(out.data(), 0, sizeof(out));
@@ -489,7 +497,7 @@ bool MysqlDatabase::revokeRefreshToken(const std::string& token_hash) {
     MysqlStmtGuard stmt(conn_, sql);
     MYSQL_BIND param{};
     unsigned long len = 0;
-    bool is_null = false;
+    MysqlBool is_null = 0;
     bindStringParam(param, token_hash, len, is_null);
     if (mysql_stmt_bind_param(stmt.get(), &param) != 0) {
         return false;
