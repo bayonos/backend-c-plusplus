@@ -79,137 +79,173 @@ void registerRoutes(HttpApp& app, AuthService& auth_service) {
         .origin("*")
         .methods(crow::HTTPMethod::GET, crow::HTTPMethod::POST, crow::HTTPMethod::OPTIONS)
         .headers("Content-Type", "Authorization");
-    CROW_ROUTE(app, "/health").methods(crow::HTTPMethod::GET)([]() {
+
+    auto rootHandler = []() {
+        crow::json::wvalue body;
+        body["status"] = "ok";
+        body["service"] = "smartfarm-auth-backend";
+        body["endpoints"] = crow::json::wvalue::list({
+            "GET /health",
+            "POST /api/auth/register",
+            "POST /api/auth/login",
+            "POST /api/auth/refresh",
+            "POST /api/auth/logout",
+            "POST /api/auth/logout-all",
+            "GET /api/auth/me",
+            "POST /api/auth/change-password",
+        });
+        return jsonResponse(200, std::move(body));
+    };
+
+    auto healthHandler = []() {
         crow::json::wvalue body;
         body["status"] = "ok";
         return jsonResponse(200, std::move(body));
-    });
+    };
 
-    CROW_ROUTE(app, "/api/auth/register")
-        .methods(crow::HTTPMethod::POST)([&auth_service](const crow::request& req) {
-            auto body = crow::json::load(req.body);
-            if (!body || body.t() != crow::json::type::Object) {
-                return errorResponse(400, "Invalid JSON request body");
-            }
-            auto username = getStringField(body, "username");
-            auto password = getStringField(body, "password");
-            if (!username || !password) {
-                return errorResponse(400, "username and password are required strings");
-            }
-            std::string full_name = getStringField(body, "full_name").value_or(*username);
-            std::string email = getStringField(body, "email").value_or("");
-            std::string phone = getStringField(body, "phone").value_or("");
-            std::string role = getStringField(body, "role").value_or("owner");
+    auto registerHandler = [&auth_service](const crow::request& req) {
+        auto body = crow::json::load(req.body);
+        if (!body || body.t() != crow::json::type::Object) {
+            return errorResponse(400, "Invalid JSON request body");
+        }
+        auto username = getStringField(body, "username");
+        auto password = getStringField(body, "password");
+        if (!username || !password) {
+            return errorResponse(400, "username and password are required strings");
+        }
+        std::string full_name = getStringField(body, "full_name").value_or(*username);
+        std::string email = getStringField(body, "email").value_or("");
+        std::string phone = getStringField(body, "phone").value_or("");
+        std::string role = getStringField(body, "role").value_or("owner");
 
-            return authResultToResponse(
-                auth_service.registerUser(*username, *password, full_name, email, phone, role));
-        });
+        return authResultToResponse(
+            auth_service.registerUser(*username, *password, full_name, email, phone, role));
+    };
 
-    CROW_ROUTE(app, "/api/auth/login")
-        .methods(crow::HTTPMethod::POST)([&auth_service](const crow::request& req) {
-            auto body = crow::json::load(req.body);
-            if (!body || body.t() != crow::json::type::Object) {
-                return errorResponse(400, "Invalid JSON request body");
-            }
-            std::optional<std::string> identifier = getStringField(body, "identifier");
-            if (!identifier) identifier = getStringField(body, "email");
-            if (!identifier) identifier = getStringField(body, "username");
-            auto password = getStringField(body, "password");
-            if (!identifier || !password) {
-                return errorResponse(400, "username (or email/identifier) and password are required");
-            }
-            return authResultToResponse(
-                auth_service.login(*identifier, *password, req.remote_ip_address));
-        });
+    auto loginHandler = [&auth_service](const crow::request& req) {
+        auto body = crow::json::load(req.body);
+        if (!body || body.t() != crow::json::type::Object) {
+            return errorResponse(400, "Invalid JSON request body");
+        }
+        std::optional<std::string> identifier = getStringField(body, "identifier");
+        if (!identifier) identifier = getStringField(body, "email");
+        if (!identifier) identifier = getStringField(body, "username");
+        auto password = getStringField(body, "password");
+        if (!identifier || !password) {
+            return errorResponse(400, "username (or email/identifier) and password are required");
+        }
+        return authResultToResponse(
+            auth_service.login(*identifier, *password, req.remote_ip_address));
+    };
 
-    CROW_ROUTE(app, "/api/auth/refresh")
-        .methods(crow::HTTPMethod::POST)([&auth_service](const crow::request& req) {
-            auto body = crow::json::load(req.body);
-            if (!body || body.t() != crow::json::type::Object) {
-                return errorResponse(400, "Invalid JSON request body");
-            }
-            auto refresh_token = getStringField(body, "refresh_token");
-            if (!refresh_token) {
-                return errorResponse(400, "refresh_token is required");
-            }
-            return authResultToResponse(auth_service.refreshSession(*refresh_token));
-        });
+    auto refreshHandler = [&auth_service](const crow::request& req) {
+        auto body = crow::json::load(req.body);
+        if (!body || body.t() != crow::json::type::Object) {
+            return errorResponse(400, "Invalid JSON request body");
+        }
+        auto refresh_token = getStringField(body, "refresh_token");
+        if (!refresh_token) {
+            return errorResponse(400, "refresh_token is required");
+        }
+        return authResultToResponse(auth_service.refreshSession(*refresh_token));
+    };
 
-    CROW_ROUTE(app, "/api/auth/logout")
-        .methods(crow::HTTPMethod::POST)([&auth_service](const crow::request& req) {
-            auto body = crow::json::load(req.body);
-            if (!body || body.t() != crow::json::type::Object) {
-                return errorResponse(400, "Invalid JSON request body");
-            }
-            auto refresh_token = getStringField(body, "refresh_token");
-            if (!refresh_token) {
-                return errorResponse(400, "refresh_token is required");
-            }
-            auto res = auth_service.logout(*refresh_token);
-            if (!res.ok) {
-                return errorResponse(res.status_code, res.error);
-            }
-            crow::json::wvalue out;
-            out["message"] = "Logged out";
-            return jsonResponse(200, std::move(out));
-        });
+    auto logoutHandler = [&auth_service](const crow::request& req) {
+        auto body = crow::json::load(req.body);
+        if (!body || body.t() != crow::json::type::Object) {
+            return errorResponse(400, "Invalid JSON request body");
+        }
+        auto refresh_token = getStringField(body, "refresh_token");
+        if (!refresh_token) {
+            return errorResponse(400, "refresh_token is required");
+        }
+        auto res = auth_service.logout(*refresh_token);
+        if (!res.ok) {
+            return errorResponse(res.status_code, res.error);
+        }
+        crow::json::wvalue out;
+        out["message"] = "Logged out";
+        return jsonResponse(200, std::move(out));
+    };
 
-    CROW_ROUTE(app, "/api/auth/logout-all")
-        .methods(crow::HTTPMethod::POST)([&auth_service](const crow::request& req) {
-            auto token = extractBearerToken(req);
-            if (!token) {
-                return errorResponse(401, "Missing or invalid Authorization header");
-            }
-            auto claims = auth_service.authenticateAccessToken(*token);
-            if (!claims) {
-                return errorResponse(401, "Invalid or expired access token");
-            }
-            auth_service.logoutAll(claims->user_id);
-            crow::json::wvalue out;
-            out["message"] = "All sessions revoked";
-            return jsonResponse(200, std::move(out));
-        });
+    auto logoutAllHandler = [&auth_service](const crow::request& req) {
+        auto token = extractBearerToken(req);
+        if (!token) {
+            return errorResponse(401, "Missing or invalid Authorization header");
+        }
+        auto claims = auth_service.authenticateAccessToken(*token);
+        if (!claims) {
+            return errorResponse(401, "Invalid or expired access token");
+        }
+        auth_service.logoutAll(claims->user_id);
+        crow::json::wvalue out;
+        out["message"] = "All sessions revoked";
+        return jsonResponse(200, std::move(out));
+    };
 
-    CROW_ROUTE(app, "/api/auth/me")
-        .methods(crow::HTTPMethod::GET)([&auth_service](const crow::request& req) {
-            auto token = extractBearerToken(req);
-            if (!token) {
-                return errorResponse(401, "Missing or invalid Authorization header");
-            }
-            auto claims = auth_service.authenticateAccessToken(*token);
-            if (!claims) {
-                return errorResponse(401, "Invalid or expired access token");
-            }
-            return authResultToResponse(auth_service.getProfile(claims->user_id));
-        });
+    auto meHandler = [&auth_service](const crow::request& req) {
+        auto token = extractBearerToken(req);
+        if (!token) {
+            return errorResponse(401, "Missing or invalid Authorization header");
+        }
+        auto claims = auth_service.authenticateAccessToken(*token);
+        if (!claims) {
+            return errorResponse(401, "Invalid or expired access token");
+        }
+        return authResultToResponse(auth_service.getProfile(claims->user_id));
+    };
 
-    CROW_ROUTE(app, "/api/auth/change-password")
-        .methods(crow::HTTPMethod::POST)([&auth_service](const crow::request& req) {
-            auto token = extractBearerToken(req);
-            if (!token) {
-                return errorResponse(401, "Missing or invalid Authorization header");
-            }
-            auto claims = auth_service.authenticateAccessToken(*token);
-            if (!claims) {
-                return errorResponse(401, "Invalid or expired access token");
-            }
-            auto body = crow::json::load(req.body);
-            if (!body || body.t() != crow::json::type::Object) {
-                return errorResponse(400, "Invalid JSON request body");
-            }
-            auto current_password = getStringField(body, "current_password");
-            auto new_password = getStringField(body, "new_password");
-            if (!current_password || !new_password) {
-                return errorResponse(400, "current_password and new_password are required");
-            }
-            auto res = auth_service.changePassword(claims->user_id, *current_password, *new_password);
-            if (!res.ok) {
-                return errorResponse(res.status_code, res.error);
-            }
-            crow::json::wvalue out;
-            out["message"] = "Password updated; all refresh tokens revoked";
-            return jsonResponse(200, std::move(out));
-        });
+    auto changePasswordHandler = [&auth_service](const crow::request& req) {
+        auto token = extractBearerToken(req);
+        if (!token) {
+            return errorResponse(401, "Missing or invalid Authorization header");
+        }
+        auto claims = auth_service.authenticateAccessToken(*token);
+        if (!claims) {
+            return errorResponse(401, "Invalid or expired access token");
+        }
+        auto body = crow::json::load(req.body);
+        if (!body || body.t() != crow::json::type::Object) {
+            return errorResponse(400, "Invalid JSON request body");
+        }
+        auto current_password = getStringField(body, "current_password");
+        auto new_password = getStringField(body, "new_password");
+        if (!current_password || !new_password) {
+            return errorResponse(400, "current_password and new_password are required");
+        }
+        auto res = auth_service.changePassword(claims->user_id, *current_password, *new_password);
+        if (!res.ok) {
+            return errorResponse(res.status_code, res.error);
+        }
+        crow::json::wvalue out;
+        out["message"] = "Password updated; all refresh tokens revoked";
+        return jsonResponse(200, std::move(out));
+    };
+
+    CROW_ROUTE(app, "/").methods(crow::HTTPMethod::GET)(rootHandler);
+    CROW_ROUTE(app, "/health").methods(crow::HTTPMethod::GET)(healthHandler);
+    CROW_ROUTE(app, "/healthz").methods(crow::HTTPMethod::GET)(healthHandler);
+
+    CROW_ROUTE(app, "/api/auth/register").methods(crow::HTTPMethod::POST)(registerHandler);
+    CROW_ROUTE(app, "/auth/register").methods(crow::HTTPMethod::POST)(registerHandler);
+
+    CROW_ROUTE(app, "/api/auth/login").methods(crow::HTTPMethod::POST)(loginHandler);
+    CROW_ROUTE(app, "/auth/login").methods(crow::HTTPMethod::POST)(loginHandler);
+
+    CROW_ROUTE(app, "/api/auth/refresh").methods(crow::HTTPMethod::POST)(refreshHandler);
+    CROW_ROUTE(app, "/auth/refresh").methods(crow::HTTPMethod::POST)(refreshHandler);
+
+    CROW_ROUTE(app, "/api/auth/logout").methods(crow::HTTPMethod::POST)(logoutHandler);
+    CROW_ROUTE(app, "/auth/logout").methods(crow::HTTPMethod::POST)(logoutHandler);
+
+    CROW_ROUTE(app, "/api/auth/logout-all").methods(crow::HTTPMethod::POST)(logoutAllHandler);
+    CROW_ROUTE(app, "/auth/logout-all").methods(crow::HTTPMethod::POST)(logoutAllHandler);
+
+    CROW_ROUTE(app, "/api/auth/me").methods(crow::HTTPMethod::GET)(meHandler);
+    CROW_ROUTE(app, "/auth/me").methods(crow::HTTPMethod::GET)(meHandler);
+
+    CROW_ROUTE(app, "/api/auth/change-password").methods(crow::HTTPMethod::POST)(changePasswordHandler);
+    CROW_ROUTE(app, "/auth/change-password").methods(crow::HTTPMethod::POST)(changePasswordHandler);
 }
 
 }  // namespace auth

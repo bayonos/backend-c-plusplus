@@ -191,7 +191,12 @@ void testHttpRoutes() {
     auth::registerRoutes(app, service);
     app.validate();
 
-    // Health
+    // Root and Health
+    auto root = dispatchRequest(app, crow::HTTPMethod::GET, "/");
+    assert(root.code == 200);
+    auto root_json = crow::json::load(root.body);
+    assert(root_json && root_json["status"].s() == "ok");
+
     auto health = dispatchRequest(app, crow::HTTPMethod::GET, "/health");
     assert(health.code == 200);
     auto health_json = crow::json::load(health.body);
@@ -213,7 +218,14 @@ void testHttpRoutes() {
     assert(reg_json["user"]["full_name"].s() == "HTTP User");
     assert(reg_json["user"]["role"].s() == "staff");
 
-    // Login
+    // Login (also verify /auth/login alias)
+    auto login_alias = dispatchRequest(
+        app,
+        crow::HTTPMethod::POST,
+        "/auth/login",
+        R"({"email":"http@example.com","password":"Password123"})");
+    assert(login_alias.code == 200);
+
     auto login = dispatchRequest(
         app,
         crow::HTTPMethod::POST,

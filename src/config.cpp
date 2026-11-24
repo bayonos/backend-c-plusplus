@@ -3,10 +3,54 @@
 
 #include <algorithm>
 #include <cctype>
+#include <fstream>
 
 namespace auth {
 
 namespace {
+
+void loadDotEnvIfPresent(const std::string& path) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        return;
+    }
+    std::string line;
+    while (std::getline(file, line)) {
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+        size_t first = line.find_first_not_of(" \t");
+        if (first == std::string::npos || line[first] == '#') {
+            continue;
+        }
+        size_t eq = line.find('=', first);
+        if (eq == std::string::npos) {
+            continue;
+        }
+        std::string key = line.substr(first, eq - first);
+        while (!key.empty() && (key.back() == ' ' || key.back() == '\t')) {
+            key.pop_back();
+        }
+        std::string val = line.substr(eq + 1);
+        size_t vfirst = val.find_first_not_of(" \t");
+        if (vfirst != std::string::npos) {
+            val = val.substr(vfirst);
+        } else {
+            val.clear();
+        }
+        while (!val.empty() && (val.back() == ' ' || val.back() == '\t')) {
+            val.pop_back();
+        }
+        if (val.size() >= 2 &&
+            ((val.front() == '"' && val.back() == '"') || (val.front() == '\'' && val.back() == '\''))) {
+            val = val.substr(1, val.size() - 2);
+        }
+        if (!key.empty()) {
+            // overwrite = 0: container/process environment variables take precedence over .env
+            setenv(key.c_str(), val.c_str(), 0);
+        }
+    }
+}
 
 std::string urlDecode(const std::string& in) {
     std::string out;
@@ -114,6 +158,8 @@ void Config::applyDatabaseUrl(const std::string& url, Config& cfg) {
 }
 
 Config Config::fromEnv() {
+    loadDotEnvIfPresent(".env");
+
     Config cfg;
     cfg.host = getEnvOrDefault("HOST", "0.0.0.0");
 
