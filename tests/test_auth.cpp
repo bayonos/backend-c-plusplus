@@ -7,6 +7,7 @@
 #include <crow.h>
 
 #include <cassert>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 
@@ -287,9 +288,47 @@ void testHttpRoutes() {
     std::cout << "[PASS] testHttpRoutes\n";
 }
 
+void testConfigEnvParsing() {
+    auth::Config cfg;
+    auth::Config::applyDatabaseUrl(
+        "mysql://smartuser:pass%40word@bayonos-db-smartfarm:3307/smartfarm_db?ssl-mode=PREFERRED",
+        cfg);
+    assert(cfg.db_driver == "mysql");
+    assert(cfg.mysql_user == "smartuser");
+    assert(cfg.mysql_password == "pass@word");
+    assert(cfg.mysql_host == "bayonos-db-smartfarm");
+    assert(cfg.mysql_port == 3307);
+    assert(cfg.mysql_database == "smartfarm_db");
+
+    setenv("DB_CONNECTION", "mysql", 1);
+    setenv("DB_HOST", "db.internal", 1);
+    setenv("DB_PORT", "3308", 1);
+    setenv("DB_USERNAME", "appuser", 1);
+    setenv("DB_PASSWORD", "appsecret", 1);
+    setenv("DB_DATABASE", "smartfarm_db", 1);
+
+    auth::Config env_cfg = auth::Config::fromEnv();
+    assert(env_cfg.db_driver == "mysql");
+    assert(env_cfg.mysql_host == "db.internal");
+    assert(env_cfg.mysql_port == 3308);
+    assert(env_cfg.mysql_user == "appuser");
+    assert(env_cfg.mysql_password == "appsecret");
+    assert(env_cfg.mysql_database == "smartfarm_db");
+
+    unsetenv("DB_CONNECTION");
+    unsetenv("DB_HOST");
+    unsetenv("DB_PORT");
+    unsetenv("DB_USERNAME");
+    unsetenv("DB_PASSWORD");
+    unsetenv("DB_DATABASE");
+
+    std::cout << "[PASS] testConfigEnvParsing\n";
+}
+
 }  // namespace
 
 int main() {
+    testConfigEnvParsing();
     testCrypto();
     testRegisterLoginRefreshLogout();
     testLegacyPlaintextAndRateLimit();

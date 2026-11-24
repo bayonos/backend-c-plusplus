@@ -4,14 +4,15 @@ A modular C++20 authentication HTTP API server powered by **Crow**, **OpenSSL 3*
 
 ## MySQL Configuration
 
-Default connection settings (configurable via environment variables):
+Supported environment variables (in priority order, with local defaults):
 
-- `DB_DRIVER=mysql`
-- `MYSQL_HOST=127.0.0.1`
-- `MYSQL_PORT=3306`
-- `MYSQL_USER=root`
-- `MYSQL_PASSWORD=root`
-- `MYSQL_DB=smartfarm_db`
+- `DATABASE_URL` (e.g., `mysql://user:password@host:3306/smartfarm_db`)
+- `DB_DRIVER` or `DB_CONNECTION` (default `mysql`)
+- `MYSQL_HOST` or `DB_HOST` (default `127.0.0.1`)
+- `MYSQL_PORT` or `DB_PORT` (default `3306`)
+- `MYSQL_USER` or `DB_USER` or `DB_USERNAME` (default `root`)
+- `MYSQL_PASSWORD` or `DB_PASSWORD` (default `root`)
+- `MYSQL_DB` or `DB_DATABASE` or `DB_NAME` (default `smartfarm_db`)
 
 ### `users` Table Mapping
 

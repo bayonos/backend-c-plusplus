@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <initializer_list>
 #include <string>
 
 namespace auth {
@@ -30,6 +31,7 @@ struct Config {
     int threads = 4;
 
     static Config fromEnv();
+    static void applyDatabaseUrl(const std::string& url, Config& cfg);
 };
 
 inline std::string getEnvOrDefault(const char* name, const std::string& fallback) {
@@ -38,6 +40,17 @@ inline std::string getEnvOrDefault(const char* name, const std::string& fallback
         return fallback;
     }
     return std::string(val);
+}
+
+inline std::string getFirstEnvOrDefault(std::initializer_list<const char*> names,
+                                        const std::string& fallback) {
+    for (const char* name : names) {
+        const char* val = std::getenv(name);
+        if (val != nullptr && *val != '\0') {
+            return std::string(val);
+        }
+    }
+    return fallback;
 }
 
 inline int64_t getEnvInt64OrDefault(const char* name, int64_t fallback) {
@@ -50,6 +63,19 @@ inline int64_t getEnvInt64OrDefault(const char* name, int64_t fallback) {
     } catch (...) {
         return fallback;
     }
+}
+
+inline int64_t getFirstEnvInt64OrDefault(std::initializer_list<const char*> names, int64_t fallback) {
+    for (const char* name : names) {
+        const char* val = std::getenv(name);
+        if (val != nullptr && *val != '\0') {
+            try {
+                return std::stoll(val);
+            } catch (...) {
+            }
+        }
+    }
+    return fallback;
 }
 
 }  // namespace auth
